@@ -38,6 +38,7 @@
 			<AdditionalIncludePath>C:\Program Files (x86)\Windows Kits\10\\include\10.0.22000.0\\cppwinrt</AdditionalIncludePath>
 			<AdditionalIncludePath>C:\Program Files (x86)\Windows Kits\NETFXSDK\4.8\include\um</AdditionalIncludePath>
 			<AdditionalIncludePath>$(RootWorkspaceDirectory)/my_lib/</AdditionalIncludePath>
+			<AdditionalIncludePath></AdditionalIncludePath>
 		</AdditionalIncludePaths>
 		<Defines></Defines>
 		<ConfigProperties>
@@ -46,8 +47,17 @@
 				<Defines></Defines>
 				<ForceIncludes></ForceIncludes>
 			</ConfigAndPlatform>
+			<ConfigAndPlatform>
+				<Name>Release:x64</Name>
+				<Defines></Defines>
+				<ForceIncludes></ForceIncludes>
+			</ConfigAndPlatform>
 			<Config>
 				<Name>Debug</Name>
+				<Defines></Defines>
+			</Config>
+			<Config>
+				<Name>Release</Name>
 				<Defines></Defines>
 			</Config>
 			<Platform>

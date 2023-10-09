@@ -14,7 +14,7 @@ _ACRTIMP void __cdecl _wassert(
 		(_wassert(_CRT_WIDE(#expression), _CRT_WIDE(__FILE__), (unsigned)(__LINE__)), 0) \
 	)
 
-#if GAME_ASSERTIONS
+#if Game_ASSERTIONS
 #define GameAssert(expression) (void)( \
 		(!!(expression)) || \
 		(_wassert(_CRT_WIDE(#expression), _CRT_WIDE(__FILE__), (unsigned)(__LINE__)), 0) \

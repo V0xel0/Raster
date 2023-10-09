@@ -108,7 +108,7 @@ bool dx_init_resources(DX_Machine* dxr, DX_Context* dxc, HWND win_handle)
 	}
 #endif
 
-	auto&& [w, h] = Win32::GetWindowClientDimensions(win_handle);
+	auto&& [w, h] = Win32::get_window_client_dims(win_handle);
 
 	// Creation of swap chain  -- BELOW SETTINGS ARE FOR CPU RASTERIZER ONLY!
 	{
@@ -123,7 +123,7 @@ bool dx_init_resources(DX_Machine* dxr, DX_Context* dxc, HWND win_handle)
 			.Format = DXGI_FORMAT_R8G8B8A8_UNORM,
 			.SampleDesc = { 1, 0 },
 			.BufferUsage = DXGI_USAGE_BACK_BUFFER,
-			.BufferCount = 1,
+			.BufferCount = 2, // For rasterizer 1 seems also to be fine?
 			.Scaling = DXGI_SCALING_STRETCH,
 			.SwapEffect = DXGI_SWAP_EFFECT_DISCARD
 		};

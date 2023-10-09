@@ -8,7 +8,7 @@ where /q cl || (
 set warnings=/WX /W4 /wd4201 /wd4100 /wd4189 /wd4505 /wd4701
 set includes=/I ../my_lib/
 set linkerFlags=/OUT:main.exe /INCREMENTAL:NO /OPT:REF /CGTHREADS:6 /STACK:0x100000,0x100000 user32.lib gdi32.lib winmm.lib dxgi.lib dxguid.lib d3d11.lib D3DCompiler.lib
-set common_compiler=/std:c++20 /MT /MP /arch:AVX2 /Oi /Ob3 /EHsc /fp:fast /fp:except- /nologo /GS- /Gs999999 /GR- /FC /Z7 /Qvec-report:2 %includes% %warnings%
+set common_compiler=/std:c++20 /MT /MP /arch:AVX2 /Oi /Ob3 /EHsc /fp:fast /fp:except- /openmp:llvm /nologo /GS- /Gs999999 /GR- /FC /Z7 /Qvec-report:2 %includes% %warnings%
 
 if "%~1"=="-Debug" (
 	echo debug build
@@ -23,6 +23,5 @@ IF NOT EXIST .\build mkdir .\build
 pushd .\build
 del *.pdb > NUL 2> NUL
 
-cl.exe %compilerFlags% ../source/main.cpp /link %linkerFlags%
-
+cl.exe %compilerFlags% ../source/Win32_x64_Platform.cpp ../source/Game.cpp /link %linkerFlags%
 popd

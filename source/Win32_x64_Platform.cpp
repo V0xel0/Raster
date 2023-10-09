@@ -1,27 +1,41 @@
+//? This Translation Unit provides data and services (declared by application) from OS to a game/app layer
+//? Architecture style is inspired from "Handmade Hero" series by Casey Muratori:
+//? Application is treated as a service that OS fulfills,
+//? instead of abstracting platform code and handling it as kind of "Virtual OS"
+//? In case of porting to a different platform, this is the ONLY file you need to change
+
+#include <stdio.h> //temporary
+#include <omp.h>
+
 #include "Utils.hpp"
 #include "GameAsserts.hpp"
-#include "GameService.hpp"
-#include "Win32Platform.hpp"
-#include "DxManagment.h"
-
+#include "Game_Services.hpp"
+#include "Win32_x64_Platform.hpp"
+#include "DxManagment.hpp"
 #include "Allocators.hpp"
 #include "Views.hpp"
+#include "Math.hpp"
 
 #ifdef _DEBUG
 #else
 
 #endif
 
-
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
-	AlwaysAssert(sizeof(void*) == 8 && "This is not a 64-bit OS!");
+	SYSTEM_INFO windows_info{};
+	GetSystemInfo(&windows_info);
+	auto cores_count = windows_info.dwNumberOfProcessors;
+	AlwaysAssert(windows_info.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64 
+	             && "This is not a 64-bit OS!");
+	
+	Win32::Platform_Clock clock = Win32::clock_create();
 	UINT schedulerGranularity = 1;
 	b32 schedulerError = (timeBeginPeriod(schedulerGranularity) == TIMERR_NOERROR);
-
-	Win32::RegisterMouseForRawInput();
-	HWND win_handle = Win32::CreateMainWindow(1280, 720, "Raster");
-	auto&& [width, height] = Win32::GetWindowClientDimensions(win_handle);
+	
+	Win32::register_mouse_raw_input();
+	HWND win_handle = Win32::create_window(1280, 720, "Raster");
+	auto&& [width, height] = Win32::get_window_client_dims(win_handle);
 	
 	Alloc_Arena global_memory
 	{
@@ -29,6 +43,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 		.base = (byte*)VirtualAlloc(0, GiB(2), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE)
 	};
 	AlwaysAssert(global_memory.base && "Failed to allocate memory from Windows");
+	
+	omp_set_max_active_levels(2);
+	omp_set_num_threads(cores_count);
 	
 	DX_Machine machine{};
 	DX_Context context{};
@@ -39,14 +56,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	if (!dx_init_resources(&machine, &context, win_handle))
 		return 0;
 	
-	GameInput gameInputBuffer[2] = {};
-	GameInput *newInputs = &gameInputBuffer[0];
-	GameInput *oldInputs = &gameInputBuffer[1];
+	Game_Input gameInputBuffer[2] = {};
+	Game_Input *newInputs = &gameInputBuffer[0];
+	Game_Input *oldInputs = &gameInputBuffer[1];
 	
-	while (Win32::isMainRunning)
+	while (Win32::g_is_running)
 	{
-		GameController *oldKeyboardMouseController = getGameController(oldInputs, 0);
-		GameController *newKeyboardMouseController = getGameController(newInputs, 0);
+		u64 tick_start = Win32::get_performance_ticks();
+		static u32 counter;
+		
+		Game_Controller *oldKeyboardMouseController = get_game_controller(oldInputs, 0);
+		Game_Controller *newKeyboardMouseController = get_game_controller(newInputs, 0);
 		*newKeyboardMouseController = {};
 		newKeyboardMouseController->isConnected = true;
 		for (u32 i = 0; i < array_count_32(newKeyboardMouseController->buttons); ++i)
@@ -59,17 +79,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 		MSG msg = {};
 		while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
 		{
-			Win32::processKeyboardMouseMsgs(&msg, newKeyboardMouseController);
+			Win32::process_keyboard_mouse_msg(&msg, newKeyboardMouseController);
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
 			if (msg.message == WM_QUIT)
 			{
-				Win32::isMainRunning = false;
+				Win32::g_is_running = false;
 				break;
 			}
 		}
 		
-		auto&& [new_width, new_height] = Win32::GetWindowClientDimensions(win_handle);
+		auto&& [new_width, new_height] = Win32::get_window_client_dims(win_handle);
 		if ((width != new_width || height != new_height) || !cpu_buffer)
 		{
 			if (cpu_buffer)
@@ -111,34 +131,51 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 		if (width && height)
 		{
 			D3D11_MAPPED_SUBRESOURCE mapped;
-
+			// Stop GPU access to the CPU-pixel buffer data
 			hr = context.imm_context->Map((ID3D11Resource *)cpu_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
 			AssertHR(hr);
 			
-			// Drawing pixels
-			static u32 counter;
+			// Drawing CPU-pixels
+			//TODO: Move drawing code out to application layer
+			//TODO: Consider memcpy from/to additional buffer instead of directly from/to mapped, basedo on
+			//		https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-map
+			// 		To never actually read directly from mapped resource
 			u32 *pixel = (u32 *)mapped.pData;
-			
-			for (u32 y = 0; y < height; y++)
+			#pragma omp parallel shared(counter, pixel) // seems to be "stuttering" sometimes
 			{
-				for (u32 x = 0; x < width; x++)
+				#pragma omp for
+				for (u32 xy = 0; xy < width*height; ++xy) 
 				{
-					u32 r = (((x + counter) % width) * 255 / width);
-					u32 g = (y * 255 / height);
-					u32 b = 0;
-					pixel[y * width + x] = (b << 16) | (g << 8) | (r << 0);
+//					u32 x = xy % width;
+//					u32 y = xy / width;
+//		
+//					u32 r = (((x + counter) % width) * 255 / width);;
+//					u32 g = (y * 255 / height);
+//					u32 b = 0;
+					
+					
+					pixel[xy] = (b << 16) | (g << 8) | (r << 0);
 				}
 			}
+
 			counter++;
-			
+			// Allow GPU access to the CPU-pixel buffer data
 			context.imm_context->Unmap((ID3D11Resource *)cpu_buffer, 0);
 			context.imm_context->CopyResource((ID3D11Resource *)back_buffer, (ID3D11Resource *)cpu_buffer);
 		}
 		
 		hr = machine.swap_chain->Present(0,0);
 		AssertHR(hr);
+		f64 frame_time_ms = Win32::get_elapsed_ms_here(clock, tick_start);
+		
+		if (counter % 100 == 0)
+		{
+			char time_buf[32];
+			sprintf_s(time_buf, sizeof(time_buf), "%.3lf ms", frame_time_ms);
+			SetWindowText(win_handle, time_buf);
+		}
 	}
 	
-	UnregisterClassA("Raster", GetModuleHandle(nullptr)); //? Do we need that?
+	UnregisterClassA("Raster", GetModuleHandle(nullptr));
 	return 0;
 }
